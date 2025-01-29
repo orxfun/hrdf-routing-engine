@@ -196,6 +196,17 @@ pub struct RouteResult {
     sections: Vec<RouteSectionResult>,
 }
 
+impl Clone for RouteResult {
+    fn clone(&self) -> Self {
+        RouteResult {
+            departure_at: self.departure_at,
+            arrival_at: self.arrival_at,
+            sections: self.sections.clone()
+        }
+
+    }
+}
+
 impl RouteResult {
     pub fn new(
         departure_at: NaiveDateTime,
@@ -218,9 +229,11 @@ impl RouteResult {
     pub fn sections(&self) -> &Vec<RouteSectionResult> {
         &self.sections
     }
+
+    //pub fn merge(&self, other: &RouteResult) -> RouteResult {}
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Copy, Clone)]
 pub struct RouteSectionResult {
     journey_id: Option<i32>,
     departure_stop_id: i32,
