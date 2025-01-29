@@ -39,58 +39,74 @@ pub fn compute_isochrones(
     display_mode: models::DisplayMode,
     verbose: bool,
 ) -> IsochroneMap {
-    let departure_stop = find_nearest_stop(
+
+    // Create a list of stops close enough to be of interest
+    let departure_stops = find_stops_in_time_range(
         hrdf.data_storage(),
         origin_point_latitude,
         origin_point_longitude,
-    );
-    let departure_stop_coord = departure_stop.wgs84_coordinates().unwrap();
-
-    // The departure time is calculated according to the time it takes to walk to the departure stop.
-    let (adjusted_departure_at, adjusted_time_limit) = adjust_departure_at(
         departure_at,
         time_limit,
-        origin_point_latitude,
-        origin_point_longitude,
-        &departure_stop,
     );
 
-    let mut routes: Vec<_> = find_reachable_stops_within_time_limit(
-        hrdf,
-        departure_stop.id(),
-        adjusted_departure_at,
-        adjusted_time_limit,
-        verbose,
-    )
-    .into_iter()
-    .filter(|route| {
-        // Keeps only stops in Switzerland.
-        let stop_id = route.sections().last().unwrap().arrival_stop_id();
-        stop_id.to_string().starts_with("85")
-    })
-    .collect();
+    let mut departure_stop_coord = departure_stops.first().unwrap().wgs84_coordinates().unwrap();
+    let mut routes: Vec<_> = vec![];
+    let mut isochrones = Vec::new();
+    
+    // then go over all these stops to compute each attainable route
+    for departure_stop in departure_stops {
+        departure_stop_coord = departure_stop.wgs84_coordinates().unwrap();
+        // The departure time is calculated according to the time it takes to walk to the departure stop.
+        let (adjusted_departure_at, adjusted_time_limit) = adjust_departure_at(
+            departure_at,
+            time_limit,
+            origin_point_latitude,
+            origin_point_longitude,
+            &departure_stop,
+        );
 
-    // A false route is created to represent the point of origin in the results.
-    let (easting, northing) = wgs84_to_lv95(origin_point_latitude, origin_point_longitude);
-    let route = Route::new(
-        NaiveDateTime::default(),
-        departure_at,
-        vec![RouteSection::new(
-            None,
-            0,
-            Some(Coordinates::default()),
-            Some(Coordinates::default()),
-            0,
-            Some(Coordinates::new(CoordinateSystem::LV95, easting, northing)),
-            Some(Coordinates::default()),
-            Some(NaiveDateTime::default()),
-            Some(NaiveDateTime::default()),
-            Some(0),
-        )],
-    );
-    routes.push(route);
+        let mut local_routes : Vec<_> = find_reachable_stops_within_time_limit(
+            hrdf,
+            departure_stop.id(),
+            adjusted_departure_at,
+            adjusted_time_limit,
+            verbose,
+        )
+            .into_iter()
+            .filter(|route| {
+                // Keeps only stops in Switzerland.
+                let stop_id = route.sections().last().unwrap().arrival_stop_id();
+                stop_id.to_string().starts_with("85")
+            })
+            .collect();
 
-    let data = get_data(routes, departure_at);
+        // A false route is created to represent the point of origin in the results.
+        let (easting, northing) = wgs84_to_lv95(origin_point_latitude, origin_point_longitude);
+        let route = Route::new(
+            NaiveDateTime::default(),
+            departure_at,
+            vec![RouteSection::new(
+                None,
+                0,
+                Some(Coordinates::default()),
+                Some(Coordinates::default()),
+                0,
+                Some(Coordinates::new(CoordinateSystem::LV95, easting, northing)),
+                Some(Coordinates::default()),
+                Some(NaiveDateTime::default()),
+                Some(NaiveDateTime::default()),
+                Some(0),
+            )],
+        );
+        local_routes.push(route);
+
+        // Then merge de found routes
+        routes.append(&mut local_routes);
+
+    }
+
+    let data = get_data(routes.into_iter(), departure_at);
+
     let bounding_box = get_bounding_box(&data, time_limit);
 
     let grid = if display_mode == models::DisplayMode::ContourLine {
@@ -99,7 +115,6 @@ pub fn compute_isochrones(
         None
     };
 
-    let mut isochrones = Vec::new();
     let isochrone_count = time_limit.num_minutes() / isochrone_interval.num_minutes();
 
     for i in 0..isochrone_count {
@@ -120,8 +135,9 @@ pub fn compute_isochrones(
         };
 
         isochrones.push(Isochrone::new(polygons, time_limit.num_minutes() as u32));
-    }
 
+    }
+    let bounding_box = get_bounding_box(&data, time_limit);
     IsochroneMap::new(
         isochrones,
         departure_stop_coord,
@@ -129,6 +145,24 @@ pub fn compute_isochrones(
     )
 }
 
+fn find_stops_in_time_range(
+    data_storage: &DataStorage,
+    origin_point_latitude: f64,
+    origin_point_longitude: f64,
+    departure_at: NaiveDateTime,
+    time_limit: Duration,
+) -> Vec<&Stop> {
+    data_storage
+        .stops()
+        .entries()
+        .into_iter()
+        // Only considers stops in Switzerland.
+        .filter(|stop| stop.id().to_string().starts_with("85"))
+        .filter(|stop| stop.wgs84_coordinates().is_some())
+        .filter(|stop| adjust_departure_at(departure_at, time_limit, origin_point_latitude, origin_point_longitude, stop).1.num_minutes() > 0)
+        // The stop list cannot be empty.
+        .collect()
+}
 fn find_nearest_stop(
     data_storage: &DataStorage,
     origin_point_latitude: f64,
@@ -190,9 +224,8 @@ fn adjust_departure_at(
     (adjusted_departure_at, adjusted_time_limit)
 }
 
-fn get_data(routes: Vec<Route>, departure_at: NaiveDateTime) -> Vec<(Coordinates, Duration)> {
+fn get_data(routes: impl Iterator<Item=Route>, departure_at: NaiveDateTime) -> Vec<(Coordinates, Duration)> {
     routes
-        .iter()
         .filter_map(|route| {
             let coord = route
                 .sections()
