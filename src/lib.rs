@@ -17,9 +17,16 @@ use hrdf_parser::{Hrdf, Version};
 use service::run_service;
 
 pub async fn run() -> Result<(), Box<dyn Error>> {
+    //let hrdf = Hrdf::new(
+    //    Version::V_5_40_41_2_0_5,
+    //    "https://data.opentransportdata.swiss/en/dataset/timetable-54-2024-hrdf/permalink",
+    //    false,
+    //)
+    //.await?;
+
     let hrdf = Hrdf::new(
-        Version::V_5_40_41_2_0_5,
-        "https://opentransportdata.swiss/en/dataset/timetable-54-2024-hrdf/permalink",
+        Version::V_5_40_41_2_0_7,
+        "https://data.opentransportdata.swiss/en/dataset/timetable-54-2025-hrdf/permalink",
         false,
     )
     .await?;

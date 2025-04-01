@@ -27,9 +27,9 @@ pub async fn run_service(hrdf: Hrdf) {
             get(move |params| compute_isochrones(Arc::clone(&hrdf_2), params)),
         )
         .layer(cors);
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:8100").await.unwrap();
+    let listener = tokio::net::TcpListener::bind("0.0.0.0:8300").await.unwrap();
 
-    log::info!("Listening on 0.0.0.0:8100...");
+    log::info!("Listening on 0.0.0.0:8300...");
 
     axum::serve(listener, app).await.unwrap();
 }
