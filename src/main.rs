@@ -2,7 +2,9 @@ use std::{error::Error, net::Ipv4Addr};
 
 use clap::{Parser, Subcommand};
 use hrdf_parser::{Hrdf, Version};
-use hrdf_routing_engine::{run_debug, run_service};
+use hrdf_routing_engine::IsochroneDisplayMode;
+use hrdf_routing_engine::{run_debug, run_service, run_test};
+use log::LevelFilter;
 
 #[derive(Subcommand)]
 enum Mode {
@@ -18,6 +20,12 @@ enum Mode {
     },
     /// Debug mode used to check if the examples still run
     Debug,
+    /// Test new features
+    Test {
+        /// Display mode of the isochrones: circles or contour_line
+        #[arg(short, long)]
+        mode: IsochroneDisplayMode,
+    },
 }
 
 #[derive(Parser)]
@@ -34,7 +42,12 @@ struct Cli {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    simple_logger::SimpleLogger::new().env().init().unwrap();
+    simple_logger::SimpleLogger::new()
+        .with_level(LevelFilter::Off)
+        .with_module_level("hrdf_routing_engine", LevelFilter::Info)
+        .env()
+        .init()
+        .unwrap();
 
     let cli = Cli::parse();
 
@@ -52,6 +65,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
         }
         Mode::Serve { address, port } => {
             run_service(hrdf, address, port).await;
+        }
+        Mode::Test { mode } => {
+            run_test(hrdf, mode)?;
         }
     }
 

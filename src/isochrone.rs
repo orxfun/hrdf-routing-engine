@@ -44,6 +44,7 @@ pub fn compute_isochrones(
     display_mode: models::DisplayMode,
     verbose: bool,
 ) -> IsochroneMap {
+    log::info!("origin_point_latitude : {origin_point_latitude}, origin_point_longitude: {origin_point_longitude}, departure_at: {departure_at}, time_limit: {time_limit}, isochrone_interval: {isochrone_interval}, display_mode: {display_mode:?}, verbose: {verbose}");
     let start_time = Instant::now();
 
     // Create a list of stops close enough to be of interest
@@ -151,10 +152,10 @@ pub fn compute_isochrones(
     let isochrone_count = time_limit.num_minutes() / isochrone_interval.num_minutes();
 
     for i in 0..isochrone_count {
-        let time_limit = Duration::minutes(isochrone_interval.num_minutes() * (i + 1));
+        let current_time_limit = Duration::minutes(isochrone_interval.num_minutes() * (i + 1));
 
         let polygons = match display_mode {
-            IsochroneDisplayMode::Circles => circles::get_polygons(&data, time_limit),
+            IsochroneDisplayMode::Circles => circles::get_polygons(&data, current_time_limit),
             IsochroneDisplayMode::ContourLine => {
                 let (grid, num_points_x, num_points_y, dx) = grid.as_ref().unwrap();
                 contour_line::get_polygons(
@@ -162,13 +163,16 @@ pub fn compute_isochrones(
                     *num_points_x,
                     *num_points_y,
                     bounding_box.0,
-                    time_limit,
+                    current_time_limit,
                     *dx,
                 )
             }
         };
 
-        isochrones.push(Isochrone::new(polygons, time_limit.num_minutes() as u32));
+        isochrones.push(Isochrone::new(
+            polygons,
+            current_time_limit.num_minutes() as u32,
+        ));
     }
 
     log::info!(
