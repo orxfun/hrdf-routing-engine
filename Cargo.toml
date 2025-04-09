@@ -1,7 +1,7 @@
 [package]
 name = "hrdf-routing-engine"
-version = "0.2.1"
-edition = "2021"
+version = "0.3.0"
+edition = "2024"
 
 license-file = "LICENSE"
 description = "Public transport routing engine based on Swiss HRDF data."
@@ -14,7 +14,7 @@ chrono = { version = "0.4.31", features = ["serde"] }
 clap = { version = "4.5.35", features = ["derive"] }
 contour = "0.13.1"
 geo = "0.30.0"
-hrdf-parser = { git = "https://github.com/florianburgener/hrdf-parser" }
+hrdf-parser = "0.2.0"
 kd-tree = "0.6.0"
 log = "0.4.22"
 rayon = "1.10.0"
@@ -37,4 +37,4 @@ svg = ["dep:svg"]
 opt-level=3
 
 [profile.release]
-# lto = true
+lto = true
