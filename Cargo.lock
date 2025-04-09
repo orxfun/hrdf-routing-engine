@@ -846,8 +846,9 @@ dependencies = [
 
 [[package]]
 name = "hrdf-parser"
-version = "0.1.2"
-source = "git+https://github.com/florianburgener/hrdf-parser#45cf57bc4b8d9c73ae39cd8ad066676a4321961b"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "aea7295fd3d2b804d47e6a0c9a95310df22a7f047701c2ca3742ef3f11279599"
 dependencies = [
  "bincode",
  "chrono",
@@ -867,7 +868,7 @@ dependencies = [
 
 [[package]]
 name = "hrdf-routing-engine"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "axum",
  "chrono",
@@ -1387,9 +1388,9 @@ checksum = "6877bb514081ee2a7ff5ef9de3281f14a4dd4bceac4c09388074a6b5df8a139a"
 
 [[package]]
 name = "miniz_oxide"
-version = "0.8.7"
+version = "0.8.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ff70ce3e48ae43fa075863cef62e8b43b71a4f2382229920e0df362592919430"
+checksum = "3be647b768db090acb35d5ec5db2b0e1f1de11133ca123b9eacf5137868f892a"
 dependencies = [
  "adler2",
 ]
