@@ -4,9 +4,9 @@ use std::{
     sync::Arc,
 };
 
-use axum::{extract::Query, http::StatusCode, routing::get, Json, Router};
+use axum::{Json, Router, extract::Query, http::StatusCode, routing::get};
 use chrono::{Duration, NaiveDate, NaiveDateTime, NaiveTime};
-use hrdf_parser::{timetable_end_date, timetable_start_date, Hrdf};
+use hrdf_parser::{Hrdf, timetable_end_date, timetable_start_date};
 use serde::{Deserialize, Serialize};
 use tower_http::cors::{Any, CorsLayer};
 
@@ -61,6 +61,7 @@ struct ComputeIsochronesRequest {
     time_limit: u32,
     isochrone_interval: u32,
     display_mode: String,
+    find_optimal: bool,
 }
 
 async fn compute_isochrones(
@@ -87,15 +88,29 @@ async fn compute_isochrones(
         return Err(StatusCode::BAD_REQUEST);
     }
 
-    let result = isochrone::compute_isochrones(
-        &hrdf,
-        params.origin_point_latitude,
-        params.origin_point_longitude,
-        NaiveDateTime::new(params.departure_date, params.departure_time),
-        Duration::minutes(params.time_limit.into()),
-        Duration::minutes(params.isochrone_interval.into()),
-        IsochroneDisplayMode::from_str(&params.display_mode).unwrap(),
-        false,
-    );
+    let result = if params.find_optimal {
+        isochrone::compute_optimal_isochrones(
+            &hrdf,
+            params.origin_point_longitude,
+            params.origin_point_latitude,
+            NaiveDateTime::new(params.departure_date, params.departure_time),
+            Duration::minutes(params.time_limit.into()),
+            Duration::minutes(params.isochrone_interval.into()),
+            Duration::minutes(30),
+            IsochroneDisplayMode::from_str(&params.display_mode).unwrap(),
+            true,
+        )
+    } else {
+        isochrone::compute_isochrones(
+            &hrdf,
+            params.origin_point_longitude,
+            params.origin_point_latitude,
+            NaiveDateTime::new(params.departure_date, params.departure_time),
+            Duration::minutes(params.time_limit.into()),
+            Duration::minutes(params.isochrone_interval.into()),
+            IsochroneDisplayMode::from_str(&params.display_mode).unwrap(),
+            true,
+        )
+    };
     Ok(Json(result))
 }
