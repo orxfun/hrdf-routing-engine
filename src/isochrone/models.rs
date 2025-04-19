@@ -1,5 +1,5 @@
 use chrono::NaiveDateTime;
-use geo::{Area, Contains, LineString, MultiPolygon, Polygon};
+use geo::{Area, Contains, MultiPolygon};
 use hrdf_parser::Coordinates;
 use serde::Serialize;
 use strum_macros::EnumString;
@@ -14,7 +14,7 @@ use svg::Document;
 #[cfg(feature = "svg")]
 use svg::node::element::Polygon as SvgPolygon;
 
-use super::utils::wgs84_to_lv95;
+use super::utils::{multi_polygon_to_lv95, wgs84_to_lv95};
 
 #[derive(Debug, Serialize, Default)]
 pub struct IsochroneMap {
@@ -81,7 +81,7 @@ impl IsochroneMap {
         let mut polygons = self
             .isochrones
             .iter()
-            .map(|i| i.to_polygons())
+            .map(|i| i.polygons().clone())
             .collect::<Vec<_>>();
 
         let polygons_original = polygons.clone();
@@ -120,7 +120,11 @@ impl IsochroneMap {
         ];
         use svg::node::element::Line;
 
-        let polys = self.get_polygons();
+        let polys = self
+            .get_polygons()
+            .into_iter()
+            .map(|m| multi_polygon_to_lv95(&m))
+            .collect::<Vec<_>>();
         let areas = self.compute_areas();
         let max_distances = if let Some(coord) = c {
             self.compute_max_distances(coord)
@@ -209,12 +213,12 @@ impl IsochroneMap {
 
 #[derive(Debug, Serialize)]
 pub struct Isochrone {
-    polygons: Vec<Vec<Coordinates>>,
+    polygons: MultiPolygon,
     time_limit: u32, // In minutes.
 }
 
 impl Isochrone {
-    pub fn new(polygons: Vec<Vec<Coordinates>>, time_limit: u32) -> Self {
+    pub fn new(polygons: MultiPolygon, time_limit: u32) -> Self {
         Self {
             polygons,
             time_limit,
@@ -223,44 +227,32 @@ impl Isochrone {
 
     /// Transforms the isochrone polygons into geo::MultiPolygons to be able to use various
     /// functionalities of the crate. The polygons are in lv95 coordinates
-    pub fn to_polygons(&self) -> MultiPolygon {
-        self.polygons
-            .iter()
-            .map(|p| {
-                Polygon::new(
-                    LineString::from(
-                        p.iter()
-                            .map(|c| {
-                                if let (Some(x), Some(y)) = (c.easting(), c.northing()) {
-                                    (x, y)
-                                } else {
-                                    wgs84_to_lv95(c.latitude().unwrap(), c.longitude().unwrap())
-                                }
-                            })
-                            .collect::<Vec<_>>(),
-                    ),
-                    vec![],
-                )
-            })
-            .collect()
+    pub fn polygons(&self) -> &MultiPolygon {
+        &self.polygons
     }
 
     pub fn compute_area(&self) -> f64 {
-        self.to_polygons().iter().map(|p| p.unsigned_area()).sum()
+        multi_polygon_to_lv95(self.polygons())
+            .iter()
+            .map(|p| p.unsigned_area())
+            .sum()
     }
 
+    /// Computes the max distance from all the points in the isochrone to the c Coord.
+    /// The distance is given in meters and the position in LV95 coordinates
     pub fn compute_max_distance(&self, c: Coordinates) -> ((f64, f64), f64) {
-        self.to_polygons().iter().flat_map(|p| p.exterior()).fold(
+        self.polygons().iter().flat_map(|p| p.exterior()).fold(
             ((f64::MIN, f64::MIN), f64::MIN),
             |((o_x, o_y), max), coord| {
+                let (cx_lv95, cy_lv95) = wgs84_to_lv95(coord.x, coord.y);
                 let (c_x, c_y) = if let (Some(x), Some(y)) = (c.easting(), c.northing()) {
                     (x, y)
                 } else {
                     wgs84_to_lv95(c.latitude().unwrap(), c.longitude().unwrap())
                 };
-                let dist = f64::sqrt(f64::powi(c_x - coord.x, 2) + f64::powi(c_y - coord.y, 2));
+                let dist = f64::sqrt(f64::powi(c_x - cx_lv95, 2) + f64::powi(c_y - cy_lv95, 2));
                 if dist > max {
-                    ((coord.x, coord.y), dist)
+                    ((cx_lv95, cy_lv95), dist)
                 } else {
                     ((o_x, o_y), max)
                 }

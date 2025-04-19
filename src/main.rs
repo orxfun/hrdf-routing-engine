@@ -4,8 +4,8 @@ use chrono::{Duration, NaiveDateTime};
 use clap::{Parser, Subcommand};
 use hrdf_parser::{Hrdf, Version};
 use hrdf_routing_engine::{
-    IsochroneDisplayMode, run_average, run_comparison, run_debug, run_optimal, run_service,
-    run_simple, run_worst,
+    ExcludedPolygons, IsochroneDisplayMode, LAKES_GEOJSON_URLS, run_average, run_comparison,
+    run_debug, run_optimal, run_service, run_simple, run_worst,
 };
 use log::LevelFilter;
 
@@ -129,12 +129,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
     )
     .await?;
 
+    let excluded_polygons =
+        ExcludedPolygons::try_new(&LAKES_GEOJSON_URLS, false, cli.cache_prefix.clone()).await?;
+
     match cli.mode {
         Mode::Debug => {
             run_debug(hrdf_2025);
         }
         Mode::Serve { address, port } => {
-            run_service(hrdf_2025, address, port).await;
+            run_service(hrdf_2025, excluded_polygons, address, port).await;
         }
         Mode::Optimal {
             isochrone_args,
@@ -151,6 +154,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             } = isochrone_args;
             run_optimal(
                 hrdf_2025,
+                excluded_polygons,
                 longitude,
                 latitude,
                 NaiveDateTime::parse_from_str(&departure_at, "%Y-%m-%d %H:%M:%S")?,
@@ -176,6 +180,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             } = isochrone_args;
             run_worst(
                 hrdf_2025,
+                excluded_polygons,
                 longitude,
                 latitude,
                 NaiveDateTime::parse_from_str(&departure_at, "%Y-%m-%d %H:%M:%S")?,
@@ -201,6 +206,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
             run_simple(
                 hrdf_2025,
+                excluded_polygons,
                 longitude,
                 latitude,
                 NaiveDateTime::parse_from_str(&departure_at, "%Y-%m-%d %H:%M:%S")?,
@@ -225,6 +231,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
             run_average(
                 hrdf_2025,
+                excluded_polygons,
                 longitude,
                 latitude,
                 NaiveDateTime::parse_from_str(&departure_at, "%Y-%m-%d %H:%M:%S")?,
@@ -258,6 +265,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             run_comparison(
                 hrdf_2024,
                 hrdf_2025,
+                excluded_polygons,
                 longitude,
                 latitude,
                 NaiveDateTime::parse_from_str(&departure_at_old, "%Y-%m-%d %H:%M:%S")?,
