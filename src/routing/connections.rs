@@ -1,5 +1,5 @@
 use chrono::{Duration, NaiveDate, NaiveDateTime};
-use hrdf_parser::{timetable_end_date, DataStorage, Journey, Model, TransportType};
+use hrdf_parser::{DataStorage, Journey, Model, TransportType, timetable_end_date};
 use rustc_hash::FxHashSet;
 
 use crate::utils::{
@@ -120,14 +120,27 @@ pub fn next_departures(
         .filter(|&(journey, journey_departure_at)| {
             // It is checked that there is enough time to embark on the journey (exchange time).
             previous_journey_id.is_none_or(|id| {
-                let exchange_time = get_exchange_time(
-                    data_storage,
-                    departure_stop_id,
-                    id,
-                    journey.id(),
-                    journey_departure_at,
-                );
-                add_minutes_to_date_time(departure_at, exchange_time.into()) <= journey_departure_at
+                let previous_journey = data_storage
+                    .journeys()
+                    .find(id)
+                    .expect("Error: previous journey not found");
+
+                // We check if the pair legagy_id is the same because it indicates
+                // that it is the same train continuing the journey although they are stored as
+                // separated journey in the hrdf format for an unknown reason
+                if previous_journey.legacy_id() != journey.legacy_id() {
+                    let exchange_time = get_exchange_time(
+                        data_storage,
+                        departure_stop_id,
+                        id,
+                        journey.id(),
+                        journey_departure_at,
+                    );
+                    add_minutes_to_date_time(departure_at, exchange_time.into())
+                        <= journey_departure_at
+                } else {
+                    true
+                }
             })
         })
         .collect()

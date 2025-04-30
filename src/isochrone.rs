@@ -14,7 +14,7 @@ use crate::routing::compute_routes_from_origin;
 use constants::WALKING_SPEED_IN_KILOMETERS_PER_HOUR;
 use geo::BooleanOps;
 use geo::MultiPolygon;
-use hrdf_parser::{CoordinateSystem, Coordinates, DataStorage, Hrdf, Model, Stop};
+use hrdf_parser::{CoordinateSystem, Coordinates, DataStorage, Hrdf, Stop};
 pub use models::DisplayMode as IsochroneDisplayMode;
 pub use models::IsochroneMap;
 
@@ -440,8 +440,6 @@ fn find_nearest_stop(
         .stops()
         .entries()
         .into_iter()
-        // Only considers stops in Switzerland.
-        .filter(|stop| stop.id().to_string().starts_with("85"))
         .filter(|stop| stop.wgs84_coordinates().is_some())
         .min_by(|a, b| {
             let coord_1 = a.wgs84_coordinates().unwrap();
@@ -471,7 +469,7 @@ fn unique_coordinates_from_routes(
     routes: &[Route],
     departure_at: NaiveDateTime,
 ) -> Vec<(Coordinates, Duration)> {
-    let mut coordinates_duration: HashMap<i32, (Coordinates, chrono::TimeDelta)> = HashMap::new();
+    let mut coordinates_duration: HashMap<i32, (Coordinates, chrono::Duration)> = HashMap::new();
     for route in routes {
         let arrival_stop = route.sections().last().expect("Route sections was empty");
         let arrival_stop_id = arrival_stop.arrival_stop_id();

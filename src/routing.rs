@@ -86,8 +86,6 @@ fn find_stops_in_time_range(
         .stops()
         .entries()
         .into_iter()
-        // Only considers stops in Switzerland.
-        .filter(|stop| stop.id().to_string().starts_with("85"))
         .filter(|stop| stop.wgs84_coordinates().is_some())
         .filter(|stop| {
             adjust_departure_at(
@@ -166,6 +164,14 @@ pub fn compute_routes_from_origin(
                 origin_point_longitude,
                 departure_stop,
             );
+            if verbose {
+                log::info!(
+                    "Departure stop : {:?}, Adjusted departure at : {:?}, Adjusted time limit : {:?}",
+                    departure_stop,
+                    adjusted_departure_at,
+                    adjusted_time_limit
+                );
+            }
 
             let local_routes: Vec<_> = find_reachable_stops_within_time_limit(
                 hrdf,
@@ -173,14 +179,7 @@ pub fn compute_routes_from_origin(
                 adjusted_departure_at,
                 adjusted_time_limit,
                 verbose,
-            )
-            .into_iter()
-            .filter(|route| {
-                // Keeps only stops in Switzerland.
-                let stop_id = route.sections().last().unwrap().arrival_stop_id();
-                stop_id.to_string().starts_with("85")
-            })
-            .collect();
+            );
 
             local_routes
         })

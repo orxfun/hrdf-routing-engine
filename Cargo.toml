@@ -1,6 +1,6 @@
 [package]
 name = "hrdf-routing-engine"
-version = "0.3.1"
+version = "0.3.2"
 edition = "2024"
 
 license-file = "LICENSE"
@@ -16,7 +16,7 @@ clap = { version = "4.5.35", features = ["derive"] }
 contour = "0.13.1"
 geo = "0.30.0"
 geojson = "0.24.2"
-hrdf-parser = "0.2.1"
+hrdf-parser = "0.3.0"
 kd-tree = "0.6.0"
 log = "0.4.22"
 rayon = "1.10.0"
@@ -34,6 +34,10 @@ tokio = { version = "1.42.0", features = ["rt", "rt-multi-thread"] }
 tower-http = { version = "0.6.2", features = ["cors"] }
 typenum = "1.17.0"
 url = "2.5.4"
+
+# For -Zminimal-versions
+native-tls = "0.2.14"
+flate2 = "1.0.35"
 
 [features]
 default = ["svg"]
