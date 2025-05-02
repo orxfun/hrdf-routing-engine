@@ -128,7 +128,15 @@ pub fn next_departures(
                 // We check if the pair legagy_id is the same because it indicates
                 // that it is the same train continuing the journey although they are stored as
                 // separated journey in the hrdf format for an unknown reason
-                if previous_journey.legacy_id() != journey.legacy_id() {
+                if !has_through_service(
+                    data_storage,
+                    departure_at.date(),
+                    previous_journey.legacy_id(),
+                    previous_journey.administration(),
+                    journey.legacy_id(),
+                    journey.administration(),
+                    departure_stop_id,
+                ) {
                     let exchange_time = get_exchange_time(
                         data_storage,
                         departure_stop_id,
@@ -174,6 +182,28 @@ pub fn get_operating_journeys(
                 })
                 .collect()
         })
+}
+
+fn has_through_service(
+    data_storage: &DataStorage,
+    date: NaiveDate,
+    journey_1_legacy_id: i32,
+    journey_1_admin: &str,
+    journey_2_legacy_id: i32,
+    journey_2_admin: &str,
+    stop_id: i32,
+) -> bool {
+    let through_service_bitfield = data_storage
+        .bit_field_id_for_through_service_by_journey_id_stop_id()
+        .get(&(
+            (journey_1_legacy_id, journey_1_admin.to_string()),
+            (journey_2_legacy_id, journey_2_admin.to_string()),
+            stop_id,
+        ));
+    through_service_bitfield.is_some_and(|bf| {
+        let bit_fields_2 = data_storage.bit_fields_by_day().get(&date).unwrap();
+        bit_fields_2.contains(bf)
+    })
 }
 
 pub fn get_exchange_time(
