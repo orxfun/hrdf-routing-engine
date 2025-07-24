@@ -4,13 +4,13 @@ use chrono::{Duration, NaiveDateTime};
 use clap::{Parser, Subcommand};
 use hrdf_parser::{Hrdf, Version};
 use hrdf_routing_engine::{
-    ExcludedPolygons, IsochroneDisplayMode, LAKES_GEOJSON_URLS, run_average, run_comparison,
-    run_debug, run_optimal, run_service, run_simple, run_worst,
+    ExcludedPolygons, IsochroneArgs, IsochroneDisplayMode, LAKES_GEOJSON_URLS, run_average,
+    run_comparison, run_debug, run_optimal, run_service, run_simple, run_worst,
 };
 use log::LevelFilter;
 
-#[derive(Parser, Debug)]
-struct IsochroneArgs {
+#[derive(Parser, Debug, Clone)]
+struct IsochroneArgsBuilder {
     /// Departure latitude
     #[arg(long, default_value_t = 46.20956654)]
     latitude: f64,
@@ -26,9 +26,46 @@ struct IsochroneArgs {
     /// Time interval between two isochrone in minutes
     #[arg(short, long, default_value_t = 10)]
     interval: i64,
+    /// Maximum number of connections
+    #[arg(short, long, default_value_t = 10)]
+    max_num_explorable_connections: i32,
+    /// Number of starting points
+    #[arg(short, long, default_value_t = 5)]
+    num_starting_points: usize,
     /// Verbose on or off
     #[arg(short, long, default_value_t = true)]
     verbose: bool,
+}
+
+impl IsochroneArgsBuilder {
+    pub(crate) fn set_departure_at(mut self, departure_at: String) -> Self {
+        self.departure_at = departure_at;
+        self
+    }
+
+    pub(crate) fn finalize(self) -> Result<IsochroneArgs, Box<dyn Error>> {
+        let Self {
+            latitude,
+            longitude,
+            departure_at,
+            time_limit,
+            interval,
+            max_num_explorable_connections,
+            num_starting_points,
+            verbose,
+        } = self;
+
+        Ok(IsochroneArgs {
+            latitude,
+            longitude,
+            departure_at: NaiveDateTime::parse_from_str(&departure_at, "%Y-%m-%d %H:%M:%S")?,
+            time_limit: Duration::minutes(time_limit),
+            interval: Duration::minutes(interval),
+            max_num_explorable_connections,
+            num_starting_points,
+            verbose,
+        })
+    }
 }
 
 #[derive(Subcommand)]
@@ -48,7 +85,7 @@ enum Mode {
     /// Compare between two years
     Compare {
         #[command(flatten)]
-        isochrone_args: IsochroneArgs,
+        isochrone_args: IsochroneArgsBuilder,
         /// Departure date and time
         #[arg(short, long, default_value_t = String::from("2024-04-11 15:36:00"))]
         departure_at_old: String,
@@ -62,7 +99,7 @@ enum Mode {
     /// Compute the optimal isochrones
     Optimal {
         #[command(flatten)]
-        isochrone_args: IsochroneArgs,
+        isochrone_args: IsochroneArgsBuilder,
         /// The +/- duration on which to compute the average (in minutes)
         #[arg(short, long, default_value_t = 30)]
         delta_time: i64,
@@ -73,7 +110,7 @@ enum Mode {
     /// Compute the optimal isochrones
     Worst {
         #[command(flatten)]
-        isochrone_args: IsochroneArgs,
+        isochrone_args: IsochroneArgsBuilder,
         /// The +/- duration on which to compute the average (in minutes)
         #[arg(short, long, default_value_t = 30)]
         delta_time: i64,
@@ -84,7 +121,7 @@ enum Mode {
     /// Simple isochrone
     Simple {
         #[command(flatten)]
-        isochrone_args: IsochroneArgs,
+        isochrone_args: IsochroneArgsBuilder,
         /// Display mode of the isochrones: circles or contour_line
         #[arg(short, long, default_value_t = IsochroneDisplayMode::Circles)]
         mode: IsochroneDisplayMode,
@@ -92,7 +129,7 @@ enum Mode {
     /// Average isochrone
     Average {
         #[command(flatten)]
-        isochrone_args: IsochroneArgs,
+        isochrone_args: IsochroneArgsBuilder,
         /// The +/- duration on which to compute the average (in minutes)
         #[arg(short, long, default_value_t = 30)]
         delta_time: i64,
@@ -120,6 +157,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .with_module_level("hrdf_routing_engine", LevelFilter::Info)
         .env()
         .init()
+        .unwrap();
+    rayon::ThreadPoolBuilder::new()
+        .num_threads(4)
+        .build_global()
         .unwrap();
 
     let cli = Cli::parse();
@@ -151,25 +192,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
             delta_time,
             mode,
         } => {
-            let IsochroneArgs {
-                latitude,
-                longitude,
-                departure_at,
-                time_limit,
-                interval,
-                verbose,
-            } = isochrone_args;
             run_optimal(
                 hrdf_2025,
                 excluded_polygons,
-                longitude,
-                latitude,
-                NaiveDateTime::parse_from_str(&departure_at, "%Y-%m-%d %H:%M:%S")?,
-                Duration::minutes(time_limit),
-                Duration::minutes(interval),
+                isochrone_args.finalize()?,
                 Duration::minutes(delta_time),
                 mode,
-                verbose,
             )?;
         }
         Mode::Worst {
@@ -177,75 +205,34 @@ async fn main() -> Result<(), Box<dyn Error>> {
             delta_time,
             mode,
         } => {
-            let IsochroneArgs {
-                latitude,
-                longitude,
-                departure_at,
-                time_limit,
-                interval,
-                verbose,
-            } = isochrone_args;
             run_worst(
                 hrdf_2025,
                 excluded_polygons,
-                longitude,
-                latitude,
-                NaiveDateTime::parse_from_str(&departure_at, "%Y-%m-%d %H:%M:%S")?,
-                Duration::minutes(time_limit),
-                Duration::minutes(interval),
+                isochrone_args.finalize()?,
                 Duration::minutes(delta_time),
                 mode,
-                verbose,
             )?;
         }
         Mode::Simple {
             isochrone_args,
             mode,
         } => {
-            let IsochroneArgs {
-                latitude,
-                longitude,
-                departure_at,
-                time_limit,
-                interval,
-                verbose,
-            } = isochrone_args;
-
             run_simple(
                 hrdf_2025,
                 excluded_polygons,
-                longitude,
-                latitude,
-                NaiveDateTime::parse_from_str(&departure_at, "%Y-%m-%d %H:%M:%S")?,
-                Duration::minutes(time_limit),
-                Duration::minutes(interval),
+                isochrone_args.finalize()?,
                 mode,
-                verbose,
             )?;
         }
         Mode::Average {
             isochrone_args,
             delta_time,
         } => {
-            let IsochroneArgs {
-                latitude,
-                longitude,
-                departure_at,
-                time_limit,
-                interval,
-                verbose,
-            } = isochrone_args;
-
             run_average(
                 hrdf_2025,
                 excluded_polygons,
-                longitude,
-                latitude,
-                NaiveDateTime::parse_from_str(&departure_at, "%Y-%m-%d %H:%M:%S")?,
-                Duration::minutes(time_limit),
-                Duration::minutes(interval),
+                isochrone_args.finalize()?,
                 Duration::minutes(delta_time),
-                verbose,
             )?;
         }
         Mode::Compare {
@@ -254,14 +241,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
             departure_at_old,
             delta_time,
         } => {
-            let IsochroneArgs {
-                latitude,
-                longitude,
-                departure_at,
-                time_limit,
-                interval,
-                verbose,
-            } = isochrone_args;
+            let args_2025 = isochrone_args.clone().finalize()?;
+            let args_2024 = isochrone_args
+                .set_departure_at(departure_at_old)
+                .finalize()?;
+
             let hrdf_2024 = Hrdf::new(
                 Version::V_5_40_41_2_0_7,
                 "https://data.opentransportdata.swiss/en/dataset/timetable-54-2024-hrdf/permalink",
@@ -273,15 +257,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 hrdf_2024,
                 hrdf_2025,
                 excluded_polygons,
-                longitude,
-                latitude,
-                NaiveDateTime::parse_from_str(&departure_at_old, "%Y-%m-%d %H:%M:%S")?,
-                NaiveDateTime::parse_from_str(&departure_at, "%Y-%m-%d %H:%M:%S")?,
-                Duration::minutes(time_limit),
-                Duration::minutes(interval),
+                args_2024,
+                args_2025,
                 Duration::minutes(delta_time),
                 mode,
-                verbose,
             )?;
         }
     }
