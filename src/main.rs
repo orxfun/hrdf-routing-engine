@@ -202,6 +202,9 @@ struct Cli {
     /// Force to rebuild the cache
     #[arg(short, long, default_value_t = false)]
     force_rebuild: bool,
+    // Maximum number of cores used. If 0 is given all cores are automatically assigned
+    #[arg(long, default_value_t = 4)]
+    num_threads: usize,
     /// What mode is used
     #[command(subcommand)]
     mode: Mode,
@@ -211,13 +214,9 @@ struct Cli {
 async fn main() -> Result<(), Box<dyn Error>> {
     simple_logger::SimpleLogger::new()
         .with_level(LevelFilter::Off)
-        .with_module_level("hrdf_routing_engine", LevelFilter::Debug)
+        .with_module_level("hrdf_routing_engine", LevelFilter::Info)
         .env()
         .init()
-        .unwrap();
-    rayon::ThreadPoolBuilder::new()
-        .num_threads(4)
-        .build_global()
         .unwrap();
 
     let cli = Cli::parse();
@@ -242,7 +241,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             run_debug(hrdf_2025);
         }
         Mode::Serve { address, port } => {
-            run_service(hrdf_2025, excluded_polygons, address, port).await;
+            run_service(hrdf_2025, cli.num_threads, excluded_polygons, address, port).await;
         }
         Mode::Optimal {
             isochrone_args,
@@ -255,6 +254,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 isochrone_args.finalize()?,
                 Duration::minutes(delta_time),
                 mode,
+                cli.num_threads,
             )?;
         }
         Mode::Worst {
@@ -268,6 +268,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 isochrone_args.finalize()?,
                 Duration::minutes(delta_time),
                 mode,
+                cli.num_threads,
             )?;
         }
         Mode::Simple {
@@ -279,6 +280,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 excluded_polygons,
                 isochrone_args.finalize()?,
                 mode,
+                cli.num_threads,
             )?;
         }
         Mode::Average {
@@ -290,6 +292,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 excluded_polygons,
                 isochrone_args.finalize()?,
                 Duration::minutes(delta_time),
+                cli.num_threads,
             )?;
         }
         Mode::Compare {
@@ -304,7 +307,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 .finalize()?;
 
             let hrdf_2024 = Hrdf::new(
-                Version::V_5_40_41_2_0_7,
+                Version::V_5_40_41_2_0_6,
                 "https://data.opentransportdata.swiss/en/dataset/timetable-54-2024-hrdf/permalink",
                 cli.force_rebuild,
                 cli.cache_prefix,
@@ -318,6 +321,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 args_2025,
                 Duration::minutes(delta_time),
                 mode,
+                cli.num_threads,
             )?;
         }
 
@@ -337,6 +341,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 isochrone_args.clone(),
                 Duration::minutes(delta_time),
                 IsochroneDisplayMode::Circles,
+                cli.num_threads,
             )?;
 
             let data = serde_json::to_string_pretty(&surfaces).unwrap();

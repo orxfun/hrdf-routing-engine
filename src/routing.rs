@@ -15,8 +15,9 @@ use hrdf_parser::Stop;
 use hrdf_parser::{CoordinateSystem, Coordinates};
 pub use models::RouteResult as Route;
 pub use models::RouteSectionResult as RouteSection;
-use rayon::iter::IntoParallelRefIterator;
-use rayon::iter::ParallelIterator;
+use orx_parallel::*;
+// use rayon::iter::IntoParallelRefIterator;
+// use rayon::iter::ParallelIterator;
 
 use core::compute_routing;
 
@@ -137,6 +138,7 @@ pub fn compute_routes_from_origin(
     departure_at: NaiveDateTime,
     time_limit: Duration,
     num_starting_points: usize,
+    num_threads: usize,
     max_num_explorable_connections: i32,
     verbose: bool,
 ) -> Vec<Route> {
@@ -156,7 +158,8 @@ pub fn compute_routes_from_origin(
 
     // then go over all these stops to compute each attainable route
     let mut routes = departure_stops
-        .par_iter()
+        .par()
+        .num_threads(num_threads)
         .map(|departure_stop| {
             // The departure time is calculated according to the time it takes to walk to the departure stop.
             let (adjusted_departure_at, adjusted_time_limit) = adjust_departure_at(
@@ -167,7 +170,7 @@ pub fn compute_routes_from_origin(
                 departure_stop,
             );
             if verbose {
-                log::info!(
+                log::debug!(
                     "Departure stop : {:?}, Adjusted departure at : {:?}, Adjusted time limit : {:?}",
                     departure_stop,
                     adjusted_departure_at,

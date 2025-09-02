@@ -1,10 +1,10 @@
+use orx_parallel::*;
 use std::f64::consts::PI;
 
 use chrono::Duration;
+use geo::MultiPolygon;
 use geo::{BooleanOps, LineString, Polygon};
-use geo::{Contains, MultiPolygon};
 use hrdf_parser::{CoordinateSystem, Coordinates};
-use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 
 use super::{
     constants::WALKING_SPEED_IN_KILOMETERS_PER_HOUR,
@@ -15,8 +15,10 @@ pub fn get_polygons(
     data: &[(Coordinates, Duration)],
     time_limit: Duration,
     num_circle_points: usize,
+    num_threads: usize,
 ) -> MultiPolygon {
-    data.par_iter()
+    data.par()
+        .num_threads(num_threads)
         .filter(|(_, duration)| *duration <= time_limit)
         .map(|(center_lv95, duration)| {
             let distance =
@@ -37,19 +39,11 @@ pub fn get_polygons(
                 (wgs84.0, wgs84.1)
             })
             .collect::<Vec<_>>();
-            Polygon::new(LineString::from(polygon), vec![])
+            // Polygon::new(LineString::from(polygon), vec![])
+            MultiPolygon::new(vec![Polygon::new(LineString::from(polygon), vec![])])
         })
-        .fold(
-            || MultiPolygon::new(vec![]),
-            |poly: MultiPolygon<f64>, p: Polygon<f64>| {
-                if !poly.contains(&p) {
-                    poly.union(&p)
-                } else {
-                    poly
-                }
-            },
-        )
-        .reduce(|| MultiPolygon::new(vec![]), |poly, p| poly.union(&p))
+        .reduce(|lhs, rhs| lhs.union(&rhs))
+        .expect("Could not compute Polygon")
 }
 
 fn generate_lv95_circle_points(e: f64, n: f64, radius: f64, num_points: usize) -> Vec<Coordinates> {

@@ -11,6 +11,7 @@ use std::time::Instant;
 use crate::isochrone::utils::haversine_distance;
 use crate::routing::Route;
 use crate::routing::compute_routes_from_origin;
+use crate::utils::compute_remaining_threads;
 use constants::WALKING_SPEED_IN_KILOMETERS_PER_HOUR;
 use geo::BooleanOps;
 use geo::MultiPolygon;
@@ -21,8 +22,7 @@ pub use models::IsochroneMap;
 use chrono::{Duration, NaiveDateTime};
 
 use models::Isochrone;
-use rayon::iter::IntoParallelRefIterator;
-use rayon::iter::ParallelIterator;
+use orx_parallel::*;
 use utils::lv95_to_wgs84;
 use utils::time_to_distance;
 
@@ -64,6 +64,7 @@ pub fn compute_optimal_isochrones(
     isochrone_args: IsochroneArgs,
     delta_time: Duration,
     display_mode: models::DisplayMode,
+    num_threads: usize,
 ) -> IsochroneMap {
     let IsochroneArgs {
         latitude,
@@ -77,7 +78,7 @@ pub fn compute_optimal_isochrones(
     } = isochrone_args;
 
     if verbose {
-        log::info!(
+        log::debug!(
             "longitude: {longitude}, latitude: {latitude}, departure_at: {departure_at}, time_limit: {}, isochrone_interval: {}, delta_time: {}, display_mode: {display_mode:?}, verbose: {verbose}",
             time_limit.num_minutes(),
             isochrone_interval.num_minutes(),
@@ -88,24 +89,26 @@ pub fn compute_optimal_isochrones(
     let min_date_time = departure_at - delta_time;
     let max_date_time = departure_at + delta_time;
 
-    let (isochrone_map, _) = NaiveDateTimeRange::new(
+    let isochrone_map = NaiveDateTimeRange::new(
         min_date_time + Duration::minutes(1),
         max_date_time,
         Duration::minutes(1),
     )
     .into_iter()
-    .collect::<Vec<_>>()
-    .par_iter()
-    .fold(
-        || (IsochroneMap::default(), f64::MIN),
-        |(iso_max, area_max), dep| {
-            let isochrone = compute_isochrones(
+    .collect::<Vec<_>>();
+    let num_dates = isochrone_map.len();
+
+    let isochrone_map = isochrone_map
+        .into_par()
+        .num_threads(num_threads)
+        .map(|dep| {
+            compute_isochrones(
                 hrdf,
                 excluded_polygons,
                 IsochroneArgs {
                     latitude,
                     longitude,
-                    departure_at: *dep,
+                    departure_at: dep,
                     time_limit,
                     interval: isochrone_interval,
                     max_num_explorable_connections,
@@ -113,33 +116,24 @@ pub fn compute_optimal_isochrones(
                     verbose,
                 },
                 display_mode,
-            );
-            let curr_area = isochrone.compute_max_area();
-            if curr_area > area_max {
-                (isochrone, curr_area)
+                compute_remaining_threads(num_threads, num_dates),
+            )
+        })
+        .reduce(|lhs, rhs| {
+            if lhs.compute_max_area() > rhs.compute_max_area() {
+                lhs
             } else {
-                (iso_max, area_max)
+                rhs
             }
-        },
-    )
-    .reduce(
-        || (IsochroneMap::default(), f64::MIN),
-        |(iso_max, area_max), (iso, area)| {
-            if area > area_max {
-                (iso, area)
-            } else {
-                (iso_max, area_max)
-            }
-        },
-    );
+        });
 
     if verbose {
-        log::info!(
+        log::debug!(
             "Time computing the optimal solution : {:.2?}",
             start_time.elapsed()
         );
     }
-    isochrone_map
+    isochrone_map.expect("No isochrone_map found.")
 }
 
 /// Computes the worst isochrone in [departure_at - delta_time; departure_at + delta_time)
@@ -151,6 +145,7 @@ pub fn compute_worst_isochrones(
     isochrone_args: IsochroneArgs,
     delta_time: Duration,
     display_mode: models::DisplayMode,
+    num_threads: usize,
 ) -> IsochroneMap {
     let IsochroneArgs {
         latitude,
@@ -164,7 +159,7 @@ pub fn compute_worst_isochrones(
     } = isochrone_args;
 
     if verbose {
-        log::info!(
+        log::debug!(
             "longitude: {longitude}, latitude: {latitude}, departure_at: {departure_at}, time_limit: {}, isochrone_interval: {}, delta_time: {}, display_mode: {display_mode:?}, verbose: {verbose}",
             time_limit.num_minutes(),
             isochrone_interval.num_minutes(),
@@ -175,24 +170,26 @@ pub fn compute_worst_isochrones(
     let min_date_time = departure_at - delta_time;
     let max_date_time = departure_at + delta_time;
 
-    let (isochrone_map, _) = NaiveDateTimeRange::new(
+    let isochrone_map = NaiveDateTimeRange::new(
         min_date_time + Duration::minutes(1),
         max_date_time,
         Duration::minutes(1),
     )
     .into_iter()
-    .collect::<Vec<_>>()
-    .par_iter()
-    .fold(
-        || (IsochroneMap::default(), f64::MAX),
-        |(iso_max, area_max), dep| {
-            let isochrone = compute_isochrones(
+    .collect::<Vec<_>>();
+    let total_dates = isochrone_map.len();
+
+    let isochrone_map = isochrone_map
+        .into_par()
+        .num_threads(num_threads)
+        .map(|dep| {
+            compute_isochrones(
                 hrdf,
                 excluded_polygons,
                 IsochroneArgs {
                     latitude,
                     longitude,
-                    departure_at: *dep,
+                    departure_at: dep,
                     time_limit,
                     interval: isochrone_interval,
                     max_num_explorable_connections,
@@ -200,33 +197,24 @@ pub fn compute_worst_isochrones(
                     verbose,
                 },
                 display_mode,
-            );
-            let curr_area = isochrone.compute_max_area();
-            if curr_area < area_max {
-                (isochrone, curr_area)
+                compute_remaining_threads(num_threads, total_dates),
+            )
+        })
+        .reduce(|lhs, rhs| {
+            if lhs.compute_max_area() < rhs.compute_max_area() {
+                lhs
             } else {
-                (iso_max, area_max)
+                rhs
             }
-        },
-    )
-    .reduce(
-        || (IsochroneMap::default(), f64::MAX),
-        |(iso_max, area_max), (iso, area)| {
-            if area < area_max {
-                (iso, area)
-            } else {
-                (iso_max, area_max)
-            }
-        },
-    );
+        });
 
     if verbose {
-        log::info!(
+        log::debug!(
             "Time computing the optimal solution : {:.2?}",
             start_time.elapsed()
         );
     }
-    isochrone_map
+    isochrone_map.expect("Could not find worst Isochrone Map")
 }
 
 /// Computes the average isochrone.
@@ -238,6 +226,7 @@ pub fn compute_average_isochrones(
     excluded_polygons: &MultiPolygon,
     isochrone_args: IsochroneArgs,
     delta_time: Duration,
+    num_threads: usize,
 ) -> IsochroneMap {
     let IsochroneArgs {
         latitude,
@@ -251,7 +240,7 @@ pub fn compute_average_isochrones(
     } = isochrone_args;
 
     if verbose {
-        log::info!(
+        log::debug!(
             "Computing average isochrone:\n longitude: {longitude}, latitude: {latitude},  departure_at: {departure_at}, time_limit: {}, isochrone_interval: {}, delta_time: {}, verbose: {verbose}",
             time_limit.num_minutes(),
             isochrone_interval.num_minutes(),
@@ -274,23 +263,29 @@ pub fn compute_average_isochrones(
         Duration::minutes(1),
     )
     .into_iter()
-    .collect::<Vec<_>>()
-    .par_iter()
-    .map(|dep| {
-        let routes = compute_routes_from_origin(
-            hrdf,
-            latitude,
-            longitude,
-            *dep,
-            time_limit,
-            num_starting_points,
-            max_num_explorable_connections,
-            verbose,
-        );
-
-        unique_coordinates_from_routes(&routes, departure_at)
-    })
     .collect::<Vec<_>>();
+
+    let num_dates = data.len();
+
+    let data = data
+        .par()
+        .num_threads(num_threads)
+        .map(|dep| {
+            let routes = compute_routes_from_origin(
+                hrdf,
+                latitude,
+                longitude,
+                *dep,
+                time_limit,
+                num_starting_points,
+                compute_remaining_threads(num_threads, num_dates),
+                max_num_explorable_connections,
+                verbose,
+            );
+
+            unique_coordinates_from_routes(&routes, departure_at)
+        })
+        .collect::<Vec<_>>();
     let bounding_box = data.iter().fold(
         ((f64::MAX, f64::MAX), (f64::MIN, f64::MIN)),
         |cover_bb, d| {
@@ -306,7 +301,7 @@ pub fn compute_average_isochrones(
     let num_points = 1500;
     let mut grids = data
         .into_iter()
-        .map(|d| contour_line::create_grid(&d, bounding_box, time_limit, num_points))
+        .map(|d| contour_line::create_grid(&d, bounding_box, time_limit, num_points, num_threads))
         .collect::<Vec<_>>();
     let timesteps = grids.len();
     let grid_ini = grids.pop().expect("Grids was empty");
@@ -358,7 +353,7 @@ pub fn compute_average_isochrones(
         .collect();
 
     if verbose {
-        log::info!(
+        log::debug!(
             "Time for finding the isochrones : {:.2?}",
             start_time.elapsed()
         );
@@ -382,6 +377,7 @@ pub fn compute_isochrones(
     excluded_polygons: &MultiPolygon,
     isochrone_args: IsochroneArgs,
     display_mode: IsochroneDisplayMode,
+    num_threads: usize,
 ) -> IsochroneMap {
     let IsochroneArgs {
         latitude,
@@ -395,7 +391,7 @@ pub fn compute_isochrones(
     } = isochrone_args;
 
     if verbose {
-        log::info!(
+        log::debug!(
             "longitude: {longitude}, latitude : {latitude},  departure_at: {departure_at}, time_limit: {}, isochrone_interval: {}, display_mode: {display_mode:?}, max_num_explorable_connections: {max_num_explorable_connections}, verbose: {verbose}",
             time_limit.num_minutes(),
             isochrone_interval.num_minutes()
@@ -416,12 +412,13 @@ pub fn compute_isochrones(
         departure_at,
         time_limit,
         num_starting_points,
+        num_threads,
         max_num_explorable_connections,
         verbose,
     );
 
     if verbose {
-        log::info!("Time for finding the routes : {:.2?}", start_time.elapsed());
+        log::debug!("Time for finding the routes : {:.2?}", start_time.elapsed());
     }
 
     let start_time = Instant::now();
@@ -438,6 +435,7 @@ pub fn compute_isochrones(
             bounding_box,
             time_limit,
             num_points,
+            num_threads,
         ))
     } else {
         None
@@ -451,7 +449,7 @@ pub fn compute_isochrones(
             let polygons = match display_mode {
                 IsochroneDisplayMode::Circles => {
                     let num_points_circle = 6;
-                    circles::get_polygons(&data, current_time_limit, num_points_circle)
+                    circles::get_polygons(&data, current_time_limit, num_points_circle, num_threads)
                 }
                 IsochroneDisplayMode::ContourLine => {
                     let (grid, num_points_x, num_points_y, dx) = grid.as_ref().unwrap();
@@ -485,7 +483,7 @@ pub fn compute_isochrones(
         .collect();
 
     if verbose {
-        log::info!(
+        log::debug!(
             "Time for finding the isochrones : {:.2?}",
             start_time.elapsed()
         );
