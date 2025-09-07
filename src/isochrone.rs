@@ -119,7 +119,13 @@ pub fn compute_optimal_isochrones(
                 compute_remaining_threads(num_threads, num_dates),
             )
         })
-        .max_by_key(|x| x.compute_max_area());
+        .reduce(|lhs, rhs| {
+            if lhs.compute_max_area() > rhs.compute_max_area() {
+                lhs
+            } else {
+                rhs
+            }
+        });
 
     if verbose {
         log::debug!(
